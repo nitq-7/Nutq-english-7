@@ -781,15 +781,25 @@ else if(st==="off"){d.style.background="var(--gentle)";d.title="\u063a\u064a\u06
 else{d.style.background="var(--accent)";d.title="\u062c\u0627\u0631\u064a \u0627\u0644\u0627\u062a\u0635\u0627\u0644...";}
 d.onclick=()=>{showToast(st==="on"?"\u2601\uFE0F \u0645\u062a\u0635\u0644 \u0628\u0627\u0644\u0633\u062d\u0627\u0628\u0629":st==="off"?("\u063a\u064a\u0631 \u0645\u062a\u0635\u0644 \u2014 "+(err||window._lastCloudErr||"\u0634\u064a\u0643 \u0639\u0644\u0649 \u0627\u0644\u0646\u062a")):"\u062c\u0627\u0631\u064a \u0627\u0644\u0627\u062a\u0635\u0627\u0644...");};
 }
+async function ensureAnon(){
+try{
+if(typeof firebase==="undefined"||!firebase.auth)return false;
+if(firebase.auth().currentUser)return true;
+await firebase.auth().signInAnonymously();
+return !!firebase.auth().currentUser;
+}catch(e){return false;}
+}
 async function cloudInit(){if(_cloudTried)return _cloudOK;_cloudTried=true;try{if(typeof firebase==="undefined"){window._cloudErr="firebase \u0645\u0634 \u0645\u062a\u062d\u0645\u0644\u0629 (\u0634\u064a\u0643 \u0639\u0644\u0649 \u0627\u0644\u0646\u062a)";setCloudDot("off",window._cloudErr);return false;}firebase.initializeApp(FB_CFG);
-try{if(firebase.auth&&!firebase.auth().currentUser)await firebase.auth().signInAnonymously();}catch(e){}_fs=firebase.firestore();await _fs.enableNetwork&&_fs.enableNetwork();_cloudOK=true;setCloudDot("on");
+let _anonOk=false;
+for(let _t=0;_t<3&&!_anonOk;_t++){if(await ensureAnon()){_anonOk=true;break;}await new Promise(r=>setTimeout(r,800));}
+_fs=firebase.firestore();await _fs.enableNetwork&&_fs.enableNetwork();_cloudOK=true;setCloudDot("on");
 try{await _fs.collection("ping").doc("t").set({t:Date.now()});const _p=await _fs.collection("ping").doc("t").get();if(!_p.exists)throw new Error("write ok / read failed");}
-catch(e){window._lastCloudErr="\u0641\u062d\u0635 \u0627\u0644\u0642\u0648\u0627\u0639\u062f: "+e.message;setCloudDot("off",window._lastCloudErr);}
+catch(e){window._lastCloudErr="\u0641\u062d\u0635 \u0627\u0644\u0642\u0648\u0627\u0639\u062f: "+e.message;setCloudDot("off",window._lastCloudErr);_cloudOK=false;_cloudTried=false;}
 }catch(e){_cloudOK=false;window._cloudErr=e.message;setCloudDot("off",e.message);}return _cloudOK;}
 window._lastCloudErr="";
-async function cloudGet(c,id){try{if(!await cloudInit())return null;const d=await _fs.collection(c).doc(id).get();return d.exists?d.data():null;}catch(e){window._lastCloudErr="\u0642\u0631\u0627\u0621\u0629 "+c+": "+e.message;setCloudDot("off",window._lastCloudErr);return null;}}
-async function cloudList(c){try{if(!await cloudInit())return[];const s=await _fs.collection(c).get();const out=[];s.forEach(d=>out.push({id:d.id,data:d.data()}));return out;}catch(e){return[];}}
-async function cloudSet(c,id,data){try{if(!await cloudInit())return false;data.updatedAt=Date.now();await _fs.collection(c).doc(id).set(data);return true;}catch(e){window._lastCloudErr="\u0643\u062a\u0627\u0628\u0629 "+c+": "+e.message;setCloudDot("off",window._lastCloudErr);return false;}}
+async function cloudGet(c,id){try{await ensureAnon();if(!await cloudInit())return null;const d=await _fs.collection(c).doc(id).get();return d.exists?d.data():null;}catch(e){window._lastCloudErr="\u0642\u0631\u0627\u0621\u0629 "+c+": "+e.message;setCloudDot("off",window._lastCloudErr);return null;}}
+async function cloudList(c){try{await ensureAnon();if(!await cloudInit())return[];const s=await _fs.collection(c).get();const out=[];s.forEach(d=>out.push({id:d.id,data:d.data()}));return out;}catch(e){return[];}}
+async function cloudSet(c,id,data){try{await ensureAnon();if(!await cloudInit())return false;data.updatedAt=Date.now();await _fs.collection(c).doc(id).set(data);return true;}catch(e){window._lastCloudErr="\u0643\u062a\u0627\u0628\u0629 "+c+": "+e.message;setCloudDot("off",window._lastCloudErr);return false;}}
 async function cloudPullAll(){
 try{
 const un=(currentUsername||"").trim().toLowerCase();
@@ -801,7 +811,7 @@ if(pd){const lpRaw=LocalDB.get(progressKey(currentUsername));let lpTs=0;try{cons
 if(!lpRaw||(pd.updatedAt||0)>lpTs){try{LocalDB.set(progressKey(currentUsername),JSON.stringify({memorized:memUnpack(pd.memorized),quizHistory:pd.quizHistory||[],updatedAt:pd.updatedAt||Date.now()}));}catch(e){}}}
 }
 try{const mm=await cloudGet("msgs",un);if(mm&&mm.text)window._pendingMsg=mm.text;
-try{_q024x();}catch(e){}}catch(e){}
+try{await _q024x();}catch(e){}}catch(e){}
 const cd=await cloudGet("content","main");
 if(cd){
 if(cd.announcement&&cd.announcement.msg){try{LocalDB.set("nutq-announce",JSON.stringify(cd.announcement));}catch(e){}}
@@ -1666,6 +1676,7 @@ function _q050x(t){
 document.querySelectorAll("#screen-owner [data-osec]").forEach(s=>s.classList.toggle("on",s.dataset.osec===t));
 document.querySelectorAll(".own-acc-h").forEach(x=>x.classList.toggle("open",x.dataset.otab===t));
 try{LocalDB.set("nutq-otab",t);}catch(e){}
+if(t==="students"){try{_q029x();}catch(e){}}
 }
 document.querySelectorAll(".own-acc-h").forEach(b=>b.onclick=()=>_q050x(b.dataset.otab));
 let EXAMS_CACHE={list:[],byUnit:{}};
@@ -2021,6 +2032,7 @@ window._ADMINS={};
 async function _q024x(){
 window._ADMINS={};
 try{if(await cloudInit()){const l=await cloudList("admins");(l||[]).forEach(x=>{window._ADMINS[x.id]=x.data||{};});}}catch(e){}
+try{refreshOwnerBtn();}catch(e){}
 }
 function _q025x(){try{return _q047x(currentUsername);}catch(e){return false;}}
 async function _q026x(id){
@@ -2400,6 +2412,7 @@ if(mm.text!==last){LocalDB.set("nutq-lastmsg:"+un,mm.text);showMsgBanner(mm.text
 }
 }
 await _q024x();
+try{const _cs=document.querySelector("._xb163df._xcaf01a");if(_cs&&_cs.id==="screen-owner")_q029x();}catch(e){}
 }catch(e){}
 },45000);
 (function init(){
